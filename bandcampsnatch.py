@@ -1,17 +1,20 @@
+import os
 import sys
 import wget
 import requests
+import time
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 
-dirToSave = input('Location to save the album (tracks will be saved in a folder with album name): \n (n.b.: you can hardcode directory path to avoid this prompt in the script on line 12)\n')
-# // It might be a good idea to set the default location if input is left empty
-# dirToSave = '/home/amarisq/Music/Faded Flowers' 
+
+# now it's just goes into `home/user/Music`. It's for my own convenience more than anything.
+dirToSave = Path.home() / "Music/"
 linkToSnatchFromInput = input('Paste link to album (ex.: https:artist.bandcamp.com/album/my-preciousss-album): \n')
 linkToSnatchFrom = linkToSnatchFromInput.split('?')[0].strip()
 CHROMEDRIVER_PATH = '/usr/bin/chromedriver'
@@ -20,9 +23,14 @@ chrome_options = webdriver.ChromeOptions()
 chrome_options.add_argument("--mute-audio")
 driver = webdriver.Chrome(service=s, options=chrome_options)
 data = driver.get(linkToSnatchFrom)
+
+# prevent cookie banner from interfering
+footer = driver.find_element(By.CSS_SELECTOR, "page-footer")
+driver.execute_script("arguments[0].style.display = 'none'", footer)
+
 album_title = driver.title.split('|')[0].strip()
 artist_name = driver.title.split('|')[1].strip()
-print(f' -- Artist:          {artist_name}') 
+print(f' -- Artist:          {artist_name}')
 print(f' -- Album:           {album_title}')
 album_cover = driver.find_elements(By.ID, 'tralbumArt')[0].find_elements(By.TAG_NAME, 'img')[0].get_attribute('src')
 track_table = driver.find_elements(By.ID, 'track_table')[0]
@@ -36,10 +44,11 @@ album_size = len(track_list)
 print(f' -- Tracks in album: {album_size}')
 print('===============================')
 album_list = []
+
 for index, track in enumerate(track_list):
 	human_index = index+1
-	play_button = track.find_elements(By.CSS_SELECTOR, 'a[role="button"]')[0]
-	track_title = track.find_elements(By.CLASS_NAME, 'track-title')[0].text
+	play_button = track.find_elements(By.CSS_SELECTOR, 'td.play-col a[role="button"]')[0]
+	track_title = track.find_elements(By.CSS_SELECTOR, 'td.title-col .track-title')[0].text
 	completion = round((100 - ((album_size - human_index)/album_size)*100), 2)
 	sys.stdout.write('\033[K')
 	print(f'Getting link for: {track_title}', end='\r')
@@ -47,7 +56,7 @@ for index, track in enumerate(track_list):
 	WebDriverWait(driver, 1)
 	play_button.click()
 	WebDriverWait(driver, 2)
-	
+
 	audio_tags = driver.find_elements(By.CSS_SELECTOR, 'audio[src]')
 
 	src_value = audio_tags[0].get_attribute('src')
@@ -64,10 +73,12 @@ for index, track in enumerate(album_list):
 	track_link = track[1]
 	completion = round((100 - ((album_size - human_index)/album_size)*100), 2)
 	print(f'Downloading: {track_title} ({human_index}/{album_size})')
-	filename = f"{str(human_index)}. {track_title}.mp3"
-	directory_path = Path(f"{dirToSave}/{album_title}")
+	sanitized_title = track_title.strip().replace("/", "_").replace("\\", "_")  # handle both / and \
+	filename = f"{str(human_index)}. {sanitized_title}.mp3"
+	directory_path = Path(f"{dirToSave}/{artist_name}/{album_title}")
 	directory_path.mkdir(parents=True, exist_ok=True)
-	wget.download(track_link, out=f"{dirToSave}/{album_title}/{filename}")
+	output_path = os.path.join(dirToSave, album_title, filename)
+	wget.download(track_link, out=output_path)
 	if album_size - human_index != 0:
 		print(f'\nDownloaded {human_index}/{album_size} ({completion}%) \n{album_size - human_index} track(s) remaining')
 	else:
